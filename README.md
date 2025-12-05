@@ -7,7 +7,7 @@ A small yet realistic backend project that **starts as a basic calculator** and 
 enable and activate venv 
 ```bash
 python -m venv venv
-souce venv/Scripts/activate
+source venv/Scripts/activate
 ```
 
 install requirements
