@@ -13,8 +13,6 @@ source venv/Scripts/activate
 install requirements
 ```bash
 pip install fastapi uvicorn
-pip install fastapi
-pip install "fastapi[standard]"
 ```
 
 
