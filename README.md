@@ -15,4 +15,10 @@ install requirements
 pip install fastapi uvicorn
 ```
 
+## Running the Calculator API
+```bash
+python -m uvicorn calculator:app --reload
+```
+
+
 
