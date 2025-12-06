@@ -1,0 +1,33 @@
+Calculator API Endpoints - Quick Reference
+==========================================
+
+Base URL: http://calculator
+
+Available Operations:
+--------------------
+POST /post/add        - Add two numbers
+POST /post/subtract   - Subtract two numbers  
+POST /post/multiply   - Multiply two numbers
+POST /post/divide     - Divide two numbers
+
+Request Format:
+--------------
+Method: POST
+Content-Type: application/json
+Body: {
+  "a": <number>,
+  "b": <number>
+}
+
+Example Requests:
+-----------------
+Add:        POST http://calculator/post/add?a=10&b=5
+Subtract:   POST http://calculator/post/subtract?a=10&b=5
+Multiply:   POST http://calculator/post/multiply?a=10&b=5
+Divide:     POST http://calculator/post/divide?a=10&b=5
+
+Response Format:
+----------------
+{
+  "result": <number>
+}
