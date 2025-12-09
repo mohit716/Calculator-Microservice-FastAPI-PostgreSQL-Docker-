@@ -316,15 +316,247 @@ class StrictOrder(BaseModel):
     total_amount: float=Field(strict=True)
     is_paid: bool=Field(strict=True)
 
+# The model_config dictionary controls validation behavior across your entire model. The str_strip_whitespace option cleans string input automatically, while validate_assignment ensures field changes after model creation still trigger validation. Individual fields can override these settings with Field(strict=True) for situations requiring exact type matching, like financial calculations or scientific data.
+
+# Nested models and complex data
+# real applications handle complex, interconnected data structures. An e-commerce order contains customer information, shipping addresses, and multiple product items ,  each requiring its own validation:
+
+from typing import List
+from datetime import datetime
+
+class Address(BaseModel):
+    street: str = Field(min_length=5)
+    city: str = Field(min_length=2)
+    postal_code: str = Field(pattern=r'^\d{5}(-\d{4})?$')
+    country: str = "USA"
+
+class Customer(BaseModel):
+    name: str = Field(min_length=1)
+    email: EmailStr
+    shipping_address: Address
+    billing_address: Optional[Address] = None
+
+class OrderItem(BaseModel):
+    product_id: int = Field(gt=0)
+    quantity: int = Field(gt=0, le=100)
+    unit_price: Decimal = Field(gt=0)
 
 
+class Order(BaseModel):
+    order_id: str = Field(pattern=r'^ORD-\d{6}$')
+    customer: Customer
+    items: List[OrderItem] = Field(min_items=1)
+    order_date: datetime = Field(default_factory=datetime.now)
+
+# Complex nested data validation
+order_data = {
+    "order_id": "ORD-123456",
+    "customer": {
+        "name": "John Doe",
+        "email": "john@example.com",
+        "shipping_address": {
+            "street": "123 Main Street",
+            "city": "Anytown",
+            "postal_code": "12345"
+        }
+    },
+    "items": [
+        {"product_id": 1, "quantity": 2, "unit_price": "29.99"},
+        {"product_id": 2, "quantity": 1, "unit_price": "149.99"}
+    ]
+}
+
+order = Order(**order_data)
+print(f"Order validated with {len(order.items)} items")
+
+# Optional fields and None handling
+# Different operations need different data requirements. User creation demands complete information, while updates should accept partial changes:
+
+from typing import Optional
+
+class UserCreate(BaseModel):
+    name: str = Field(min_length=1)
+    email: EmailStr
+    age: int = Field(ge=13, le=120)
+    phone: Optional[str] = Field(None, pattern=r'^\+?1?\d{9,15}$')
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1)
+    email: Optional[EmailStr] = None
+    age: Optional[int] = Field(None, ge=13, le=120)
+    phone: Optional[str] = Field(None, pattern=r'^\+?1?\d{9,15}$')
+
+# PATCH request with partial data
+update_data = {"name": "Jane Smith", "age": 30}
+user_update = UserUpdate(**update_data)
+
+# Serialize only provided fields
+patch_data = user_update.model_dump(exclude_none=True)
+print(f"Fields to update: {list(patch_data.keys())}")
 
 
+Serialization converts Pydantic objects back into dictionaries or JSON strings for storage or transmission. The model_dump() method handles this conversion, with exclude_none=True removing unprovided fields. This pattern works perfectly for PATCH requests where clients send only the fields they want to change, preventing accidental data overwrites in your database.
+
+This foundation prepares you for the next challenge: implementing custom validation logic that captures your application’s unique business rules.
 
 
+# Custom validation and real-world integration
+# Building production applications means handling data that doesn’t fit standard type-checking patterns.
+
+# Consider a user registration form where password requirements vary based on subscription plans, or an API that receives address data from multiple countries with different postal code formats. These scenarios require custom validation logic that captures your specific business rules while integrating smoothly with web frameworks and configuration systems.
+
+# This section shows you how to implement practical custom validation patterns, integrate Pydantic models with FastAPI for automatic API documentation, and manage application settings through environment variables using the .env file approach that most production applications rely on.
+
+# Field validators and model validation
+# When business logic determines data validity, Pydantic’s @field_validator decorator transforms your validation functions into part of the model itself. Consider a user registration system where different subscription tiers have different password requirements:
+
+from pydantic import BaseModel, field_validator, Field  
+import re
+
+class UserRegistration(BaseModel):
+    username: str = Field(min_length=3)
+    email: EmailStr
+    password: str
+    subscription_tier: str = Field(pattern=r'^(free|pro|enterprise)$')
+    
+    @field_validator('password')
+    @classmethod
+    def validate_password_complexity(cls, password, info):
+        tier = info.data.get('subscription_tier', 'free')
+        if len(password) < 8:
+            raise ValueError('Password must be at least 8 characters')
+        if tier == 'enterprise' and not re.search(r'[A-Z]', password):
+            raise ValueError('Enterprise accounts require uppercase letters')
+        return password
+    
+
+# The @field_validator decorator gives you access to other field values through the info.data parameter, allowing validation rules that depend on multiple fields. The validator runs after basic type checking passes, so you can safely assume the subscription_tier is one of the allowed values.
+
+# For validation that spans multiple fields, the @model_validator decorator runs after all individual fields are validated:
+
+from datetime import datetime
+from pydantic import model_validator
+
+class EventRegistration(BaseModel):
+    start_date: datetime
+    end_date: datetime
+    max_attendees: int = Field(gt=0)
+    current_attendees: int = Field(ge=0)
+
+    @model_validator(mode='after')
+    def validate_event_constraints(self):
+        if self.end_date <= self.start_date:
+            raise ValueError('Event end date must be after start date')
+        if self.current_attendees > self.max_attendees:
+            raise ValueError('Current attendees cannot exceed maximum')
+        return self
+
+# The mode='after' parameter ensures the validator receives a fully constructed model instance, making it perfect for business logic that requires access to all validated fields. The validator must return self to indicate successful validation.
 
 
+# FastAPI integration
+# FastAPI’s integration with Pydantic creates automatic request validation and API documentation. The key pattern involves creating separate models for different operations, giving you control over what data flows in each direction:
+
+from fastapi import FastAPI
+from typing import Optional
+from datetime import datetime
+
+app = FastAPI()
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=3)
+    email: EmailStr
+    password: str = Field(min_length=8)
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: EmailStr
+    created_at: datetime
+
+@app.post("/users/", response_model=UserResponse)
+async def create_user(user: UserCreate):
+    # FastAPI automatically validates the request body
+    new_user = {
+        "id": 1,
+        "username": user.username,
+        "email": user.email,
+        "created_at": datetime.now()
+    }
+    return UserResponse(**new_user)
+
+# The separation between input and output models provides several benefits. Input models can include validation rules and required fields, while output models control exactly what data gets sent to clients. FastAPI automatically generates OpenAPI documentation from your Pydantic models, creating interactive API docs that developers can use to test endpoints.
+
+# For update operations, you can create models where all fields are optional:
+
+from pydantic import BaseModel, EmailStr, Field, Optional
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = Field(None, min_length=3)
+    email: Optional[EmailStr] = None
+
+@app.patch("/users/{user_id}")
+async def update_user(user_id: int, user_update: UserUpdate):
+    # Only update provided fields
+    update_data = user_update.model_dump(exclude_unset=True)
+    # Your database update logic here
+    return {"message": f"Updated user {user_id}"}
+
+# The exclude_unset=True parameter in PATCH operations ensures you only update fields that were explicitly provided, preventing accidental overwrites. This pattern works perfectly for REST APIs where clients send partial updates.
+
+# Configuration management with environment variables
+# Production applications need secure, deployment-friendly configuration management. Pydantic’s BaseSettings combined with .env files provides type-safe configuration that works across development, staging, and production environments.
+
+# First, create a .env file in your project root:
+
+# .env file
+DATABASE_URL=postgresql://user:password@localhost:5432/myapp
+SECRET_KEY=your-secret-key-here
+DEBUG=false
+ALLOWED_HOSTS=localhost,127.0.0.1,yourdomain.com
 
 
+# Then define your settings model:
+from pydantic import BaseSettings, Field
+from typing import List
 
+class AppSettings(BaseSettings):
+    database_url: str = Field(description="Database connection URL")
+    secret_key: str = Field(description="Secret key for JWT tokens")
+    debug: bool = Field(default=False)
+    allowed_hosts: List[str] = Field(default=["localhost"])
 
+    class Config:
+        env_file = ".env"
+        case_sensitive = False
+
+# Load settings automatically from environment and .env file
+
+settings = AppSettings()
+
+# The BaseSettings class automatically reads from environment variables, .env files, and command-line arguments. Environment variables take precedence over .env file values, making it easy to override settings in different deployment environments. The case_sensitive = False setting allows flexible environment variable naming.
+
+class DatabaseSettings(BaseSettings):
+    url: str = Field(env="DATABASE_URL")
+    max_connections: int = Field(default=5, env="DB_MAX_CONNECTIONS")
+
+class AppSettings(BaseSettings):
+    secret_key: str
+    debug: bool = False
+    database: DatabaseSettings = DatabaseSettings()
+
+    class Config:
+        env_file = ".env"
+
+settings = AppSettings()
+# Access nested configuration
+db_url = settings.database.url
+
+# This nested approach keeps related settings together while maintaining a clear separation between different components of your application. Each settings group can have its own environment variable prefix and validation rules.
+
+# The .env file approach works with deployment platforms like Heroku, AWS, and Docker, where environment variables are the standard way to configure applications. Your application gets type safety and validation while following cloud-native configuration patterns that operations teams expect.
+
+# These patterns form the foundation for building maintainable applications that handle real-world complexity. Pydantic’s validation system adapts to your specific requirements while providing clear error messages and automatic documentation that helps your entire team understand the data structures your application expects.
+
+# Conclusion
+# You’ve now seen how Pydantic can save you from the tedious work of writing validation code by hand. Instead of cluttering your functions with isinstance() checks and custom error handling, you can define your data structure once and let Pydantic handle the rest.
