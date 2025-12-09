@@ -254,6 +254,70 @@ good_product = ProductPydantic(
 
 # Pydantic's Field() function transforms basic type hints into sophisticated validation rules that protect your application: 
 
+from pydantic import BaseModel, Field
+from decimal import Decimal
+from typing import Optional
+
+class Product(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    price: Decimal = Field(gt=0, le=10000)
+    description: optional[str] = Field(None, max_length=500)
+    category: str = Field(..., pattern=r'^[A-Za-z\s]') # only letters and spaces
+    stock_quantity: int = Field(ge=0) # greater than or equal to 0 
+    is_available: bool = True
+
+# This works - all constraints satisfied
+valid_product = Product(
+    name="Wireless Headphones",
+    price="199.99", # String converted to Decimal
+    description="High-quality wireless headphones",
+    category="Electronics",
+    stock_quantity=50
+)
+
+# This fails with clear error messages
+try:
+    invalid_product = Product(
+        name="", # Too short
+        price=-50, # Negative price
+        category="Electronics123", # Contains numbers
+        stock_quantity=-5 # Negative stock
+    )
+except ValidationError as e:
+    print(f"Validation errors: {len(e.errors())} issues found")
+
+
+#Each Field() parameter serves a specific purpose: min_length and max_length prevent database schema violations, gt and le create business logic boundaries, and pattern formatted data using regular expressions. The Field(...) syntax with ellipsis marks the required fields, while Field(None, ...) creates optional fields with validation rules.
+
+
+# Type coercion vs strict validation
+# By default, Pydantic converts compatible types rather than rejecting them outright. This flexibility works well for user input, but some scenarios demand exact type matching:
+
+from pydantic immport BaseModel, Field, ValidationError
+
+# Default: Lenient type coercion
+class FlexibleOrder(BaseModel):
+    order_id: int
+    total_amount: float
+    is_paid: bool
+
+# These all work due to automatic conversion
+flexible_order = FlexibleOrder(
+    order_id="12345", # String to int
+    total_amount="99.99", # String to float
+    is_paid="true" # String to bool
+)
+
+# Strict validation when precision matters
+class StrictOrder(BaseModel):
+    model_config = {"str_strip_whitespace": True, "validate_assignment": True}
+    
+    order_id: int= Field(strict=True)
+    total_amount: float=Field(strict=True)
+    is_paid: bool=Field(strict=True)
+
+
+
 
 
 
